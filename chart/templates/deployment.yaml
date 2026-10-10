@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  # Rolling update: add one new pod at a time, never drop below the normal count
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      # The longest Kubernetes waits for a pod to stop before forcing it
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: APP_MESSAGE
+              value: {{ .Values.message | quote }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 256Mi
+          {{- if .Values.safeRollout }}
+          # Startup: give Java up to 2 minutes to start before other checks begin
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 2
+            failureThreshold: 60
+          # Readiness: only send traffic when the app says it's ready
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 2
+          # Liveness: restart the pod if it stops responding
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 10
+          # Wait 10 seconds before shutting down, so traffic stops arriving first
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "10"]
+          {{- end }}

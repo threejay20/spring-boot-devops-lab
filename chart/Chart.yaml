@@ -1,0 +1,5 @@
+apiVersion: v2
+name: spring-boot-devops-lab
+description: Spring Boot service with zero-downtime rollout settings
+version: 0.1.0
+appVersion: "1.1"

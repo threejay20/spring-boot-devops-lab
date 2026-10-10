@@ -1,0 +1,7 @@
+replicas: 3
+image:
+  repository: spring-boot-devops-lab
+  tag: "1.1"
+message: "Hello from version 1"
+# true = startup, readiness and liveness probes plus a preStop pause
+safeRollout: true
