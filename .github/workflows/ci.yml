@@ -1,0 +1,61 @@
+name: CI
+
+# When it runs: every push to main, and every pull request
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The smallest permissions that work: read the code, publish packages
+permissions:
+  contents: read
+  packages: write
+
+# If you push twice quickly, cancel the older run instead of queueing both
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Get the code
+      - uses: actions/checkout@v4
+
+      # 2. Install Java 21 and cache Maven's downloaded libraries between runs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # 3. Compile and run the tests. If a test fails, the pipeline stops here
+      - name: Build and test
+        run: ./mvnw -B clean verify
+
+      # 4. Check the Helm chart: structure first, then the real rendered output
+      - name: Check the Helm chart
+        run: |
+          helm lint ./chart
+          helm template demo ./chart > /dev/null
+
+      # 5. Sign in to GitHub's registry with a short-lived token GitHub provides.
+      #    Only on pushes to main, never on pull requests
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 6. Build the image. Push it only on main, tagged with the commit ID
+      - name: Build and push the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ghcr.io/threejay20/spring-boot-devops-lab:${{ github.sha }}
+            ghcr.io/threejay20/spring-boot-devops-lab:latest
