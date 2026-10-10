@@ -13,6 +13,12 @@ RUN mvn -B -q clean package -DskipTests
 
 # Stage 2: the food truck. Only the Java runtime (JRE), no compiler.
 FROM eclipse-temurin:21-jre
+
+# Our own labels, so registries show this project's details, not the base image's.
+LABEL org.opencontainers.image.title="spring-boot-devops-lab"
+LABEL org.opencontainers.image.description="Spring Boot service built, containerised and deployed with zero-downtime DevOps practices"
+LABEL org.opencontainers.image.source="https://github.com/threejay20/spring-boot-devops-lab"
+
 WORKDIR /app
 
 # Run as a normal user, not root.

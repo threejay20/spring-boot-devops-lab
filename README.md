@@ -1,6 +1,6 @@
 # spring-boot-devops-lab
 
-A small Spring Boot service, used to practise the full path a Java service takes to production: build, containerise, deploy with zero downtime, and run safely on Kubernetes.
+A small Spring Boot service, used to practise the full path a Java service takes to production: build, containerise, deploy with zero downtime, and automate with a pipeline.
 
 ## What's here so far
 
@@ -9,7 +9,17 @@ A small Spring Boot service, used to practise the full path a Java service takes
 | 1. Build | Spring Boot app with a `/hello` endpoint and Actuator health checks, built with Maven | Done |
 | 2. Containerise | Multi-stage Dockerfile, JRE-only runtime image, non-root user, container-aware memory settings | Done |
 | 3. Deploy | Helm chart on a local Kubernetes cluster (kind) with rolling updates, probes and graceful shutdown | Done |
-| 4. Automate | GitHub Actions pipeline to build, test and publish the image | Planned |
+| 4. Automate | GitHub Actions pipeline that builds, tests, checks the Helm chart and publishes the image to GitHub Container Registry | Done |
+
+## Get the image
+
+Every push to `main` publishes a new image, tagged with the commit ID and `latest`:
+
+```bash
+docker pull ghcr.io/threejay20/spring-boot-devops-lab:latest
+docker run -d -p 8080:8080 --name app ghcr.io/threejay20/spring-boot-devops-lab:latest
+curl localhost:8080/hello
+```
 
 ## Run it
 
@@ -49,6 +59,8 @@ Settings change without a rebuild. `SERVER_PORT` moves the port, and `APP_MESSAG
 
 **Non-root user.** The app runs as `appuser`, not root.
 
+**Image labels.** The image sets its own OCI labels for title, description and source repository, instead of inheriting the base image's.
+
 **Container-aware memory.** The heap is set with `-XX:MaxRAMPercentage=75` instead of a fixed `-Xmx`, so it scales with the container's memory limit and leaves room for non-heap memory.
 
 **Rolling updates that never drop capacity.** `maxSurge: 1` and `maxUnavailable: 0`, so a new pod must be ready before an old one is removed.
@@ -58,6 +70,10 @@ Settings change without a rebuild. `SERVER_PORT` moves the port, and `APP_MESSAG
 **Graceful shutdown.** A 10-second `preStop` pause lets the load balancer stop sending traffic before the pod shuts down, and Spring Boot finishes requests already in progress.
 
 **Safe deploys.** Releases use `helm upgrade --install --atomic`, which rolls back automatically if the new version never becomes ready. Charts are checked with `helm template` before deploying, because `helm lint` only checks structure.
+
+**Continuous integration.** Every push and pull request builds the app and runs the tests, then checks the Helm chart with `helm lint` and `helm template`. Only pushes to `main` publish an image, tagged with the commit ID and `latest`, so untested code never reaches the registry. The pipeline gets the smallest permissions it needs, caches Maven libraries between runs, and cancels older runs when a newer push arrives.
+
+**Ready for AWS.** Publishing to Amazon ECR instead of GitHub's registry is a sign-in change: an IAM role trusted through OIDC for this repository and branch, with no stored keys. The build, test and tagging steps stay the same.
 
 ## Experiments
 
@@ -79,4 +95,4 @@ Without the probes, traffic reached pods before Java had finished starting, and 
 
 ## Tech
 
-Java 21, Spring Boot, Maven, Docker, Eclipse Temurin, Kubernetes (kind), Helm
+Java 21, Spring Boot, Maven, Docker, Eclipse Temurin, Kubernetes (kind), Helm, GitHub Actions, GitHub Container Registry
