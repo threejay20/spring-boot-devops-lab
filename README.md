@@ -1,6 +1,6 @@
 # spring-boot-devops-lab
 
-A small Spring Boot service, used to practise the full path a Java service takes to production: build, containerise, deploy with zero downtime, and automate with a pipeline.
+A small Spring Boot service, used to practise the full path a Java service takes to production: build, containerise, deploy with zero downtime, automate with a pipeline, and stream events through Kafka.
 
 ## What's here so far
 
@@ -10,6 +10,7 @@ A small Spring Boot service, used to practise the full path a Java service takes
 | 2. Containerise | Multi-stage Dockerfile, JRE-only runtime image, non-root user, container-aware memory settings | Done |
 | 3. Deploy | Helm chart on a local Kubernetes cluster (kind) with rolling updates, probes and graceful shutdown | Done |
 | 4. Automate | GitHub Actions pipeline that builds, tests, checks the Helm chart and publishes the image to GitHub Container Registry | Done |
+| 5. Stream | Kafka lab: keys and partitions, consumer groups, consumer lag and consumer scaling (`kafka/run-lab.sh`) | Done |
 
 ## Get the image
 
@@ -49,6 +50,12 @@ helm upgrade --install demo ./chart --atomic --timeout 5m
 kubectl get pods
 ```
 
+The Kafka lab, with Docker:
+
+```bash
+./kafka/run-lab.sh
+```
+
 Settings change without a rebuild. `SERVER_PORT` moves the port, and `APP_MESSAGE` (set through the chart's `message` value) changes the `/hello` reply.
 
 ## Design decisions
@@ -75,6 +82,8 @@ Settings change without a rebuild. `SERVER_PORT` moves the port, and `APP_MESSAG
 
 **Ready for AWS.** Publishing to Amazon ECR instead of GitHub's registry is a sign-in change: an IAM role trusted through OIDC for this repository and branch, with no stored keys. The build, test and tagging steps stay the same.
 
+**Kafka keys for ordering.** Trades use the bond ID as the message key, so every trade for one bond lands in the same partition and stays in order. The lab uses one broker; production would use a replication factor of 3, `min.insync.replicas=2` and `acks=all`, so a broker can fail without losing data.
+
 ## Experiments
 
 ### Memory: the same image in a 256 MB container
@@ -93,6 +102,18 @@ Settings change without a rebuild. `SERVER_PORT` moves the port, and `APP_MESSAG
 
 Without the probes, traffic reached pods before Java had finished starting, and old pods stopped while requests were still arriving.
 
+### Kafka: a `trades` topic with 3 partitions
+
+| Test | Result |
+| --- | --- |
+| 300 trades sent while the `risk` group wasn't reading | `risk` lag grew to 300, while the `reporting` group stayed at 0: each group keeps its own offsets |
+| `risk` started reading again | Lag back to 0, continuing from its last offset with nothing missed or read twice |
+| 4 consumers in one group, 3 partitions | One consumer was assigned 0 partitions: partitions set the maximum parallelism |
+| 3 bond keys | All three hashed to partition 0, so one partition took all the traffic (a hot partition) |
+| 12 bond keys, 120 trades | Spread 70 / 20 / 30 across the partitions: better, but still uneven |
+
+With few keys, or a few very busy ones, one partition can take most of the load. Lag should be watched per partition, not just in total.
+
 ## Tech
 
-Java 21, Spring Boot, Maven, Docker, Eclipse Temurin, Kubernetes (kind), Helm, GitHub Actions, GitHub Container Registry
+Java 21, Spring Boot, Maven, Docker, Eclipse Temurin, Kubernetes (kind), Helm, GitHub Actions, GitHub Container Registry, Apache Kafka
